@@ -18,6 +18,8 @@ locals {
 
   create_outposts_local_cluster    = length(var.outpost_config) > 0
   enable_cluster_encryption_config = length(var.cluster_encryption_config) > 0 && !local.create_outposts_local_cluster
+
+  dualstack_oidc_issuer_url = try(replace(replace(aws_eks_cluster.this[0].identity[0].oidc[0].issuer, "https://oidc.eks.", "https://oidc-eks."), ".amazonaws.com/", ".api.aws/"), null)
 }
 
 ################################################################################
@@ -345,7 +347,7 @@ data "tls_certificate" "this" {
   # Not available on outposts
   count = local.create_oidc_provider && var.include_oidc_root_ca_thumbprint ? 1 : 0
 
-  url = aws_eks_cluster.this[0].identity[0].oidc[0].issuer
+  url = local.dualstack_oidc_issuer_url
 }
 
 resource "aws_iam_openid_connect_provider" "oidc_provider" {
@@ -354,7 +356,7 @@ resource "aws_iam_openid_connect_provider" "oidc_provider" {
 
   client_id_list  = distinct(compact(concat(["sts.amazonaws.com"], var.openid_connect_audiences)))
   thumbprint_list = concat(local.oidc_root_ca_thumbprint, var.custom_oidc_thumbprints)
-  url             = aws_eks_cluster.this[0].identity[0].oidc[0].issuer
+  url             = local.dualstack_oidc_issuer_url
 
   tags = merge(
     { Name = "${var.cluster_name}-eks-irsa" },
@@ -543,7 +545,7 @@ locals {
   # `null` will return the latest Kubernetes version from the EKS API, which at time of writing is 1.30
   # https://github.com/kubernetes/kubernetes/pull/123561
   idpc_backwards_compat_version = contains(["1.21", "1.22", "1.23", "1.24", "1.25", "1.26", "1.27", "1.28", "1.29"], coalesce(var.cluster_version, "1.30"))
-  idpc_issuer_url               = local.idpc_backwards_compat_version ? try(aws_eks_cluster.this[0].identity[0].oidc[0].issuer, null) : null
+  idpc_issuer_url               = local.idpc_backwards_compat_version ? try(local.dualstack_oidc_issuer_url, null) : null
 }
 
 resource "aws_eks_identity_provider_config" "this" {
